@@ -23,8 +23,8 @@ from sqlglot.optimizer.deduplicate_projections import deduplicate_projections
 from sqlglot.schema import ensure_schema
 
 RULES = (
-    qualify,
     deduplicate_projections,
+    qualify,
     pushdown_projections,
     normalize,
     unnest_subqueries,
