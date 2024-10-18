@@ -370,7 +370,12 @@ class TestOptimizer(unittest.TestCase):
                     schema={
                         "t1": {"id": "int64", "dt": "date", "common": "int64"},
                         "lkp": {"id": "int64", "other_id": "int64", "common": "int64"},
-                        "t2": {"other_id": "int64", "dt": "date", "v": "int64", "common": "int64"},
+                        "t2": {
+                            "other_id": "int64",
+                            "dt": "date",
+                            "v": "int64",
+                            "common": "int64",
+                        },
                     },
                     dialect="bigquery",
                 ),
@@ -823,7 +828,11 @@ FROM READ_CSV('tests/fixtures/optimizer/tpc-h/nation.csv.gz', 'delimiter', '|') 
 
     def test_annotate_funcs(self):
         test_schema = {
-            "tbl": {"bin_col": "BINARY", "str_col": "STRING", "bignum_col": "BIGNUMERIC"}
+            "tbl": {
+                "bin_col": "BINARY",
+                "str_col": "STRING",
+                "bignum_col": "BIGNUMERIC",
+            }
         }
 
         for i, (meta, sql, expected) in enumerate(
@@ -835,12 +844,17 @@ FROM READ_CSV('tests/fixtures/optimizer/tpc-h/nation.csv.gz', 'delimiter', '|') 
 
             for dialect in dialect.split(", "):
                 result = parse_and_optimize(
-                    annotate_functions, sql, dialect, schema=test_schema, dialect=dialect
+                    annotate_functions,
+                    sql,
+                    dialect,
+                    schema=test_schema,
+                    dialect=dialect,
                 )
 
                 with self.subTest(title):
                     self.assertEqual(
-                        result.type.sql(dialect), exp.DataType.build(expected).sql(dialect)
+                        result.type.sql(dialect),
+                        exp.DataType.build(expected).sql(dialect),
                     )
 
     def test_cast_type_annotation(self):
@@ -1433,3 +1447,52 @@ FROM READ_CSV('tests/fixtures/optimizer/tpc-h/nation.csv.gz', 'delimiter', '|') 
         self.assertEqual(4, normalization_distance(gen_expr(2), max_=100))
         self.assertEqual(18, normalization_distance(gen_expr(3), max_=100))
         self.assertEqual(110, normalization_distance(gen_expr(10), max_=100))
+
+    def test_deduplicate_projections(self):
+        # Basic deduplication
+        sql = "SELECT a, b, a FROM x"
+        expected = "SELECT a, b FROM x"
+        self.assertEqual(
+            optimizer.deduplicate_projections.deduplicate_projections(parse_one(sql)).sql(),
+            expected,
+        )
+
+        # No duplicates
+        sql = "SELECT a, b, c FROM x"
+        expected = "SELECT a, b, c FROM x"
+        self.assertEqual(
+            optimizer.deduplicate_projections.deduplicate_projections(parse_one(sql)).sql(),
+            expected,
+        )
+
+        # Multiple duplicates
+        sql = "SELECT a, b, c, a, b, d, c FROM x"
+        expected = "SELECT a, b, c, d FROM x"
+        self.assertEqual(
+            optimizer.deduplicate_projections.deduplicate_projections(parse_one(sql)).sql(),
+            expected,
+        )
+
+        # Deduplication with functions
+        sql = "SELECT a, UPPER(b), c, LOWER(a), UPPER(b) FROM x"
+        expected = "SELECT a, UPPER(b), c, LOWER(a) FROM x"
+        self.assertEqual(
+            optimizer.deduplicate_projections.deduplicate_projections(parse_one(sql)).sql(),
+            expected,
+        )
+
+        # Deduplication with complex expressions
+        sql = "SELECT a + 1, b * 2, a + 1, c / 3, b * 2 FROM x"
+        expected = "SELECT a + 1, b * 2, c / 3 FROM x"
+        self.assertEqual(
+            optimizer.deduplicate_projections.deduplicate_projections(parse_one(sql)).sql(),
+            expected,
+        )
+
+        # Deduplication with derived table
+        sql = """SELECT y.a, y.b, y.a, y.c FROM (SELECT a, b, c, c FROM x) AS y"""
+        expected = """SELECT y.a, y.b, y.c FROM (SELECT a, b, c FROM x) AS y"""
+        self.assertEqual(
+            optimizer.deduplicate_projections.deduplicate_projections(parse_one(sql)).sql(),
+            expected,
+        )

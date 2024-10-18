@@ -19,10 +19,12 @@ from sqlglot.optimizer.qualify import qualify
 from sqlglot.optimizer.qualify_columns import quote_identifiers
 from sqlglot.optimizer.simplify import simplify
 from sqlglot.optimizer.unnest_subqueries import unnest_subqueries
+from sqlglot.optimizer.deduplicate_projections import deduplicate_projections
 from sqlglot.schema import ensure_schema
 
 RULES = (
     qualify,
+    deduplicate_projections,
     pushdown_projections,
     normalize,
     unnest_subqueries,
